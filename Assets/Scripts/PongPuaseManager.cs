@@ -1,6 +1,7 @@
 using System.Collections;
 using TMPro;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class PongPauseManager : MonoBehaviour
 {
@@ -8,30 +9,40 @@ public class PongPauseManager : MonoBehaviour
     [SerializeField] private GameObject pauseIcon;
     [SerializeField] private TMP_Text countdownText;
 
+    [Header("Pause Panel")]
+    [SerializeField] private GameObject pausePanel;
+
     [Header("Config")]
     [SerializeField] private int countdownSeconds = 3;
+    [SerializeField] private string mainMenuSceneName = "MainMenu";
 
     private bool paused;
     private Coroutine countdownRoutine;
 
-    public bool IsPaused
+    public bool IsPaused => paused;
+
+    private void Start()
     {
-        get { return paused; }
+        if (pausePanel != null)
+            pausePanel.SetActive(false);
+
+        if (pauseIcon != null)
+            pauseIcon.SetActive(false);
+
+        if (countdownText != null)
+        {
+            countdownText.text = "";
+            countdownText.gameObject.SetActive(false);
+        }
     }
 
     public void TogglePause()
     {
-        if (paused)
-        {
-            ResumeWithCountdown();
-        }
-        else
-        {
-            PauseGame();
-        }
+        if (paused) ResumeWithCountdown();
+        else PauseGame();
     }
 
-    private void PauseGame()
+    public void PauseGame()
     {
         if (countdownRoutine != null)
         {
@@ -42,10 +53,8 @@ public class PongPauseManager : MonoBehaviour
         paused = true;
         Time.timeScale = 0f;
 
-        if (pauseIcon != null)
-        {
-            pauseIcon.SetActive(true);
-        }
+        if (pauseIcon != null) pauseIcon.SetActive(true);
+        if (pausePanel != null) pausePanel.SetActive(true);
 
         if (countdownText != null)
         {
@@ -54,12 +63,10 @@ public class PongPauseManager : MonoBehaviour
         }
     }
 
-    private void ResumeWithCountdown()
+    public void ResumeWithCountdown()
     {
         if (countdownRoutine != null)
-        {
             StopCoroutine(countdownRoutine);
-        }
 
         countdownRoutine = StartCoroutine(ResumeRoutine());
     }
@@ -69,24 +76,18 @@ public class PongPauseManager : MonoBehaviour
         paused = true;
         Time.timeScale = 0f;
 
-        if (pauseIcon != null)
-        {
-            pauseIcon.SetActive(false);
-        }
+        if (pauseIcon != null) pauseIcon.SetActive(false);
+        if (pausePanel != null) pausePanel.SetActive(false);
 
         if (countdownText != null)
-        {
             countdownText.gameObject.SetActive(true);
-        }
 
         int current = countdownSeconds;
 
         while (current > 0)
         {
             if (countdownText != null)
-            {
                 countdownText.text = current.ToString();
-            }
 
             yield return new WaitForSecondsRealtime(1f);
             current--;
@@ -101,5 +102,24 @@ public class PongPauseManager : MonoBehaviour
         paused = false;
         Time.timeScale = 1f;
         countdownRoutine = null;
+    }
+
+    public void OnClickContinue()
+    {
+        ResumeWithCountdown();
+    }
+
+    public void OnClickMainMenu()
+    {
+        Time.timeScale = 1f;
+        paused = false;
+
+        if (countdownRoutine != null)
+        {
+            StopCoroutine(countdownRoutine);
+            countdownRoutine = null;
+        }
+
+        SceneManager.LoadScene(mainMenuSceneName);
     }
 }

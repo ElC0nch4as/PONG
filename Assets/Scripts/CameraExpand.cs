@@ -1,11 +1,12 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class CameraExpand : MonoBehaviour
 {
     [Header("Camera")]
     [SerializeField] private Camera targetCamera;
-    [SerializeField] private float normalSize = 5f;
+    [SerializeField] private float normalSize = 5.05f;
     [SerializeField] private float expandedSize = 7.5f;
     [SerializeField] private float duration = 5f;
 
@@ -13,56 +14,68 @@ public class CameraExpand : MonoBehaviour
     [SerializeField] private AudioSource sfxSource;
     [SerializeField] private AudioClip expandSfx;
 
-    private Coroutine sizeRoutine;
-    private bool playedExpandSfx;
+    [SerializeField] private float extraHoldAfterExpand = 2f;
 
-    public float Duration
-    {
-        get { return duration; }
-    }
-
-    public float ExpandedSize
-    {
-        get { return expandedSize; }
-    }
-
-    public float ExpandSfxLength
+    public float TotalTransitionTime
     {
         get
         {
-            if (expandSfx == null)
-            {
-                return 0f;
-            }
-
-            return expandSfx.length;
+            float sfx = (expandSfx != null) ? expandSfx.length : 0f;
+            float baseTime = Mathf.Max(duration, sfx);
+            return baseTime + extraHoldAfterExpand;
         }
     }
 
+    private Coroutine sizeRoutine;
+    private bool playedExpandSfx;
+
+    public float Duration => duration;
+    public float ExpandedSize => expandedSize;
+
+    public float ExpandSfxLength => (expandSfx != null) ? expandSfx.length : 0f;
+
     private void Awake()
     {
-        if (targetCamera == null)
+        if (targetCamera == null) targetCamera = GetComponent<Camera>();
+        if (targetCamera == null) targetCamera = Camera.main;
+
+        ForceNormalNow();
+    }
+
+    private void OnEnable()
+    {
+        ForceNormalNow();
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    private void OnDisable()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        ForceNormalNow();
+        playedExpandSfx = false;
+    }
+
+    private void ForceNormalNow()
+    {
+        if (targetCamera == null) return;
+
+        if (sizeRoutine != null)
         {
-            targetCamera = Camera.main;
+            StopCoroutine(sizeRoutine);
+            sizeRoutine = null;
         }
 
-        if (targetCamera != null)
-        {
-            targetCamera.orthographicSize = normalSize;
-        }
+        targetCamera.orthographicSize = normalSize;
     }
 
     public void Expand()
     {
-        if (targetCamera == null)
-        {
-            targetCamera = Camera.main;
-        }
-
-        if (targetCamera == null)
-        {
-            return;
-        }
+        if (targetCamera == null) targetCamera = Camera.main;
+        if (targetCamera == null) return;
 
         if (!playedExpandSfx && sfxSource != null && expandSfx != null)
         {
@@ -73,17 +86,12 @@ public class CameraExpand : MonoBehaviour
         StartSizeRoutine(expandedSize);
     }
 
-    public void ResetToNormal()
+    public void ResetToNormal(bool instant = true)
     {
-        if (targetCamera == null)
-        {
-            targetCamera = Camera.main;
-        }
+        if (targetCamera == null) targetCamera = Camera.main;
+        if (targetCamera == null) return;
 
-        if (targetCamera == null)
-        {
-            return;
-        }
+        playedExpandSfx = false;
 
         if (sizeRoutine != null)
         {
@@ -91,17 +99,19 @@ public class CameraExpand : MonoBehaviour
             sizeRoutine = null;
         }
 
-        targetCamera.orthographicSize = normalSize;
-        playedExpandSfx = false;
+        if (instant)
+        {
+            targetCamera.orthographicSize = normalSize;
+        }
+        else
+        {
+            StartSizeRoutine(normalSize);
+        }
     }
 
     private void StartSizeRoutine(float targetSize)
     {
-        if (sizeRoutine != null)
-        {
-            StopCoroutine(sizeRoutine);
-        }
-
+        if (sizeRoutine != null) StopCoroutine(sizeRoutine);
         sizeRoutine = StartCoroutine(LerpSizeRoutine(targetSize));
     }
 

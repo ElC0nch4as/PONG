@@ -38,6 +38,7 @@ public class Paddle : MonoBehaviour
         min = newMin;
         max = newMax;
     }
+    public float MoveInput => moveInput;
 
     private void Update()
     {

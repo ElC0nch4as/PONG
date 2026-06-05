@@ -4,7 +4,6 @@ using UnityEngine;
 public class Ball : MonoBehaviour
 {
     [Header("Movement")]
-    [SerializeField] private float speed = 8f;
     [SerializeField] private float baseSpeed = 8f;
     [SerializeField] private float launchDelay = 1f;
     [SerializeField] private float speedIncreasePerHit = 1.05f;
@@ -28,6 +27,11 @@ public class Ball : MonoBehaviour
     [SerializeField] private Vector2 ballSize = new Vector2(0.25f, 0.25f);
     [SerializeField] private float collisionSkin = 0.02f;
 
+    [Header("Advanced Bounce")]
+    [SerializeField] private float bounceAngleStrength = 1.0f;
+    [SerializeField] private float randomJitter = 0.03f;
+    [SerializeField] private float spinFromPaddleInput = 0.15f;
+
     [Header("Audio")]
     [SerializeField] private AudioSource hitSource;
     [SerializeField] private AudioClip hitSfx;
@@ -35,29 +39,29 @@ public class Ball : MonoBehaviour
     [SerializeField] private float pitchMax = 1.35f;
 
     private Vector2 direction;
+    private float speed;
     private bool isMoving;
     private bool fourPaddlesMode;
+
     private Coroutine launchCoroutine;
     private float queuedXDirection;
 
     private void Start()
     {
-        ApplyBoundsFromCamera(Camera.main, 0.05f);
         speed = baseSpeed;
+        ApplyBoundsFromCamera(Camera.main, 0.05f);
         BeginLaunch();
     }
 
+    public void SetSpeedIncreasePerHit(float value) => speedIncreasePerHit = value;
+
+    public void EnableFourPaddlesMode() => fourPaddlesMode = true;
+    public void DisableFourPaddlesMode() => fourPaddlesMode = false;
+
     private void Update()
     {
-        if (gameManager != null && gameManager.IsGameEnded)
-        {
-            return;
-        }
-
-        if (!isMoving)
-        {
-            return;
-        }
+        if (gameManager != null && gameManager.IsGameEnded) return;
+        if (!isMoving) return;
 
         Move();
         HandleWallCollisions();
@@ -81,6 +85,8 @@ public class Ball : MonoBehaviour
         CancelInvoke();
         ApplyBoundsFromCamera(Camera.main, 0.05f);
     }
+
+    public void CancelPendingLaunch() => CancelInvoke();
 
     public void BeginLaunch()
     {
@@ -106,45 +112,21 @@ public class Ball : MonoBehaviour
         StopBall();
         queuedXDirection = xDirection;
 
-        if (xDirection == 0f)
-        {
-            Invoke("BeginLaunch", seconds);
-        }
-        else
-        {
-            Invoke("LaunchToDirection", seconds);
-        }
-    }
-
-    public void EnableFourPaddlesMode()
-    {
-        fourPaddlesMode = true;
-    }
-
-    public void DisableFourPaddlesMode()
-    {
-        fourPaddlesMode = false;
-    }
-
-    public void CancelPendingLaunch()
-    {
-        CancelInvoke();
+        if (xDirection == 0f) Invoke(nameof(BeginLaunch), seconds);
+        else Invoke(nameof(LaunchToDirection), seconds);
     }
 
     public void ApplyBoundsFromCamera(Camera cam, float padding)
     {
-        if (cam == null)
-        {
-            return;
-        }
+        if (cam == null) return;
 
-        float halfHeight = cam.orthographicSize;
-        float halfWidth = halfHeight * cam.aspect;
+        float halfH = cam.orthographicSize;
+        float halfW = halfH * cam.aspect;
 
-        minY = -halfHeight + padding;
-        maxY = halfHeight - padding;
-        minX = -halfWidth + padding;
-        maxX = halfWidth - padding;
+        minY = -halfH + padding;
+        maxY = halfH - padding;
+        minX = -halfW + padding;
+        maxX = halfW - padding;
     }
 
     private void Move()
@@ -154,205 +136,141 @@ public class Ball : MonoBehaviour
 
     private void HandleWallCollisions()
     {
-        if (fourPaddlesMode)
-        {
-            return;
-        }
+        if (fourPaddlesMode) return;
 
-        Vector3 position = transform.position;
+        Vector3 pos = transform.position;
         float halfBallY = ballSize.y * 0.5f;
 
-        if (position.y + halfBallY >= maxY)
+        if (pos.y + halfBallY >= maxY)
         {
-            position.y = maxY - halfBallY;
+            pos.y = maxY - halfBallY;
             direction.y *= -1f;
-            transform.position = position;
+            transform.position = pos;
         }
-        else if (position.y - halfBallY <= minY)
+        else if (pos.y - halfBallY <= minY)
         {
-            position.y = minY + halfBallY;
+            pos.y = minY + halfBallY;
             direction.y *= -1f;
-            transform.position = position;
+            transform.position = pos;
         }
     }
 
     private void HandlePaddleCollisions()
     {
-        if (CheckVerticalPaddleCollision(leftPaddle, true))
-        {
-            return;
-        }
+        if (CheckVerticalPaddleCollision(leftPaddle, true)) return;
+        if (CheckVerticalPaddleCollision(rightPaddle, false)) return;
 
-        if (CheckVerticalPaddleCollision(rightPaddle, false))
-        {
-            return;
-        }
+        if (!fourPaddlesMode) return;
 
-        if (!fourPaddlesMode)
-        {
-            return;
-        }
-
-        if (CheckHorizontalPaddleCollision(topPaddle, true))
-        {
-            return;
-        }
-
+        if (CheckHorizontalPaddleCollision(topPaddle, true)) return;
         CheckHorizontalPaddleCollision(bottomPaddle, false);
     }
 
     private bool CheckVerticalPaddleCollision(Paddle paddle, bool isLeftPaddle)
     {
-        if (paddle == null)
-        {
-            return false;
-        }
+        if (paddle == null) return false;
+        if (isLeftPaddle && direction.x >= 0f) return false;
+        if (!isLeftPaddle && direction.x <= 0f) return false;
 
-        if (isLeftPaddle && direction.x >= 0f)
-        {
-            return false;
-        }
-
-        if (!isLeftPaddle && direction.x <= 0f)
-        {
-            return false;
-        }
-
-        Vector3 paddlePosition = paddle.transform.position;
-        Vector3 ballPosition = transform.position;
+        Vector3 paddlePos = paddle.transform.position;
+        Vector3 ballPos = transform.position;
 
         bool overlapX =
-            ballPosition.x + ballSize.x * 0.5f > paddlePosition.x - paddleSize.x * 0.5f &&
-            ballPosition.x - ballSize.x * 0.5f < paddlePosition.x + paddleSize.x * 0.5f;
+            ballPos.x + ballSize.x * 0.5f > paddlePos.x - paddleSize.x * 0.5f &&
+            ballPos.x - ballSize.x * 0.5f < paddlePos.x + paddleSize.x * 0.5f;
 
         bool overlapY =
-            ballPosition.y + ballSize.y * 0.5f > paddlePosition.y - paddleSize.y * 0.5f &&
-            ballPosition.y - ballSize.y * 0.5f < paddlePosition.y + paddleSize.y * 0.5f;
+            ballPos.y + ballSize.y * 0.5f > paddlePos.y - paddleSize.y * 0.5f &&
+            ballPos.y - ballSize.y * 0.5f < paddlePos.y + paddleSize.y * 0.5f;
 
-        if (!overlapX || !overlapY)
-        {
-            return false;
-        }
+        if (!overlapX || !overlapY) return false;
 
-        direction.x *= -1f;
+        float relY = (ballPos.y - paddlePos.y) / (paddleSize.y * 0.5f);
+        relY = Mathf.Clamp(relY, -1f, 1f);
+
+        float spin = paddle.MoveInput * spinFromPaddleInput;
+        float jitter = Random.Range(-randomJitter, randomJitter);
+
+        float xSign = isLeftPaddle ? 1f : -1f;
+        float newY = (relY * bounceAngleStrength) + spin + jitter;
+
+        direction = new Vector2(xSign, newY).normalized;
+
         speed *= speedIncreasePerHit;
-        ResolveVerticalOverlap(paddlePosition);
+        ResolveVerticalOverlap(paddlePos);
         PlayHitSfx();
         return true;
     }
 
     private bool CheckHorizontalPaddleCollision(Paddle paddle, bool isTopPaddle)
     {
-        if (paddle == null)
-        {
-            return false;
-        }
+        if (paddle == null) return false;
+        if (isTopPaddle && direction.y <= 0f) return false;
+        if (!isTopPaddle && direction.y >= 0f) return false;
 
-        if (isTopPaddle && direction.y <= 0f)
-        {
-            return false;
-        }
-
-        if (!isTopPaddle && direction.y >= 0f)
-        {
-            return false;
-        }
-
-        Vector3 paddlePosition = paddle.transform.position;
-        Vector3 ballPosition = transform.position;
+        Vector3 paddlePos = paddle.transform.position;
+        Vector3 ballPos = transform.position;
 
         bool overlapX =
-            ballPosition.x + ballSize.x * 0.5f > paddlePosition.x - horizontalPaddleSize.x * 0.5f &&
-            ballPosition.x - ballSize.x * 0.5f < paddlePosition.x + horizontalPaddleSize.x * 0.5f;
+            ballPos.x + ballSize.x * 0.5f > paddlePos.x - horizontalPaddleSize.x * 0.5f &&
+            ballPos.x - ballSize.x * 0.5f < paddlePos.x + horizontalPaddleSize.x * 0.5f;
 
         bool overlapY =
-            ballPosition.y + ballSize.y * 0.5f > paddlePosition.y - horizontalPaddleSize.y * 0.5f &&
-            ballPosition.y - ballSize.y * 0.5f < paddlePosition.y + horizontalPaddleSize.y * 0.5f;
+            ballPos.y + ballSize.y * 0.5f > paddlePos.y - horizontalPaddleSize.y * 0.5f &&
+            ballPos.y - ballSize.y * 0.5f < paddlePos.y + horizontalPaddleSize.y * 0.5f;
 
-        if (!overlapX || !overlapY)
-        {
-            return false;
-        }
+        if (!overlapX || !overlapY) return false;
 
-        direction.y *= -1f;
+        float relX = (ballPos.x - paddlePos.x) / (horizontalPaddleSize.x * 0.5f);
+        relX = Mathf.Clamp(relX, -1f, 1f);
+
+        float spin = paddle.MoveInput * spinFromPaddleInput;
+        float jitter = Random.Range(-randomJitter, randomJitter);
+
+        float ySign = isTopPaddle ? -1f : 1f;
+        float newX = (relX * bounceAngleStrength) + spin + jitter;
+
+        direction = new Vector2(newX, ySign).normalized;
+
         speed *= speedIncreasePerHit;
-        ResolveHorizontalOverlap(paddlePosition);
+        ResolveHorizontalOverlap(paddlePos);
         PlayHitSfx();
         return true;
     }
 
-    private void ResolveVerticalOverlap(Vector3 paddlePosition)
+    private void ResolveVerticalOverlap(Vector3 paddlePos)
     {
         float offset = paddleSize.x * 0.5f + ballSize.x * 0.5f + collisionSkin;
-        Vector3 position = transform.position;
+        Vector3 pos = transform.position;
 
-        if (position.x < paddlePosition.x)
-        {
-            position.x = paddlePosition.x - offset;
-        }
-        else
-        {
-            position.x = paddlePosition.x + offset;
-        }
-
-        transform.position = position;
+        pos.x = (pos.x < paddlePos.x) ? (paddlePos.x - offset) : (paddlePos.x + offset);
+        transform.position = pos;
     }
 
-    private void ResolveHorizontalOverlap(Vector3 paddlePosition)
+    private void ResolveHorizontalOverlap(Vector3 paddlePos)
     {
         float offset = horizontalPaddleSize.y * 0.5f + ballSize.y * 0.5f + collisionSkin;
-        Vector3 position = transform.position;
+        Vector3 pos = transform.position;
 
-        if (position.y < paddlePosition.y)
-        {
-            position.y = paddlePosition.y - offset;
-        }
-        else
-        {
-            position.y = paddlePosition.y + offset;
-        }
-
-        transform.position = position;
+        pos.y = (pos.y < paddlePos.y) ? (paddlePos.y - offset) : (paddlePos.y + offset);
+        transform.position = pos;
     }
 
     private void CheckGoal()
     {
-        if (gameManager == null)
-        {
-            return;
-        }
+        if (gameManager == null) return;
 
-        float ballX = transform.position.x;
-        float ballY = transform.position.y;
+        float x = transform.position.x;
+        float y = transform.position.y;
         float halfBallY = ballSize.y * 0.5f;
 
-        if (ballX < minX)
-        {
-            ScorePlayer2();
-            return;
-        }
+        if (x < minX) { ScorePlayer2(); return; }
+        if (x > maxX) { ScorePlayer1(); return; }
 
-        if (ballX > maxX)
-        {
-            ScorePlayer1();
-            return;
-        }
+        if (!fourPaddlesMode) return;
 
-        if (!fourPaddlesMode)
-        {
-            return;
-        }
-
-        if (ballY + halfBallY > maxY)
-        {
-            ScorePlayer2();
-            return;
-        }
-
-        if (ballY - halfBallY < minY)
-        {
-            ScorePlayer1();
-        }
+        if (y + halfBallY > maxY) { ScorePlayer2(); return; }
+        if (y - halfBallY < minY) { ScorePlayer1(); }
     }
 
     private void ScorePlayer1()
@@ -360,10 +278,9 @@ public class Ball : MonoBehaviour
         gameManager.AddPointToPlayer1();
         ResetBallToCenter();
 
-        if (!gameManager.IsGameEnded)
-        {
-            LaunchAfterPoint(-1f);
-        }
+        if (gameManager.IsPhase2Transitioning || gameManager.IsGameEnded) return;
+
+        LaunchAfterPoint(-1f);
     }
 
     private void ScorePlayer2()
@@ -371,22 +288,17 @@ public class Ball : MonoBehaviour
         gameManager.AddPointToPlayer2();
         ResetBallToCenter();
 
-        if (!gameManager.IsGameEnded)
-        {
-            LaunchAfterPoint(1f);
-        }
+        if (gameManager.IsPhase2Transitioning || gameManager.IsGameEnded) return;
+
+        LaunchAfterPoint(1f);
     }
 
     private void LaunchAfterPoint(float serveDirection)
     {
         if (gameManager.IsPhase2Transitioning)
-        {
             gameManager.QueueServe(serveDirection);
-        }
         else
-        {
             BeginLaunch(serveDirection);
-        }
     }
 
     private IEnumerator LaunchRoutine()
@@ -405,19 +317,8 @@ public class Ball : MonoBehaviour
 
     private void LaunchNow(float xDirection)
     {
-        float x;
-        float y;
-
-        if (xDirection == 0f)
-        {
-            x = Random.value < 0.5f ? -1f : 1f;
-        }
-        else
-        {
-            x = Mathf.Sign(xDirection);
-        }
-
-        y = Random.value < 0.5f ? -1f : 1f;
+        float x = (xDirection == 0f) ? (Random.value < 0.5f ? -1f : 1f) : Mathf.Sign(xDirection);
+        float y = Random.value < 0.5f ? -1f : 1f;
 
         direction = new Vector2(x, y).normalized;
         isMoving = true;
@@ -439,10 +340,7 @@ public class Ball : MonoBehaviour
 
     private void PlayHitSfx()
     {
-        if (hitSource == null || hitSfx == null)
-        {
-            return;
-        }
+        if (hitSource == null || hitSfx == null) return;
 
         float t = Mathf.InverseLerp(baseSpeed, baseSpeed * 2f, speed);
         hitSource.pitch = Mathf.Lerp(pitchMin, pitchMax, t);
